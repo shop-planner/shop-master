@@ -1,4 +1,5 @@
 (defpackage plan-tree
+  (:nicknames shop-extended-plan-tree)
   (:use common-lisp iterate)
   (:import-from :alexandria #:when-let)
   (:export #:dependency
@@ -124,7 +125,7 @@ cross-links for VAL using information in TABLE."))
 
 (defstruct (complex-tree-node (:include tree-node))
   children
-  )
+  (method-name nil :type (or null symbol)))
 
 (defmethod make-instantiator ((obj complex-tree-node))
   `(make-complex-tree-node ,@ (slot-fillers obj)))
@@ -139,7 +140,7 @@ cross-links for VAL using information in TABLE."))
 
 (defstruct (top-node (:include complex-tree-node))
   ;; table from plan s-expressions to nodes.
-  (lookup-table nil :type '(or hash-table null)))
+  (lookup-table nil :type (or hash-table null)))
 
 (defmethod make-instantiator ((obj top-node))
   `(make-top-node ,@ (slot-fillers obj)))
@@ -158,7 +159,7 @@ cross-links for VAL using information in TABLE."))
     (make-table-entries obj)
     `(let* ,(obj-bindings *table-for-load-form*)
        ,@(make-cross-links *table-for-load-form*)
-       ,(gethash obj *table-for-load-form*)))))
+       ,(gethash obj *table-for-load-form*))))
 
 (defgeneric make-table-entries (node)
   (:documentation "Traverse the plan tree, populating *TABLE-FOR-LOAD-FORM* dynamic variable

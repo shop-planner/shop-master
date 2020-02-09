@@ -29,11 +29,15 @@ tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
   (when gc
     (trivial-garbage:gc :full t))
 
+  (when (and (not plan-tree) repairable)
+    (warn "Does not make sense to plan repairably without the plan tree.~%Setting PLAN-TREE to true.")
+    (setf plan-tree t))
+
   (let* ((start-run-time (get-internal-run-time))
          (start-real-time (get-internal-real-time))
          (*plan-tree* nil)
          (*plans-found* nil)
-         (*enhanced-plan-tree* plan-tree)
+         (*enhanced-plan-tree* repairable)
          (*no-dependencies* no-dependencies)
          (*include-rationale* rationale)
          (*record-dependencies-p* (and *enhanced-plan-tree* (not *no-dependencies*)))
@@ -308,6 +312,10 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
           (setf (unifier state) unifier)))
       t)))
 (defun CHOOSE-METHOD-STATE (state domain)
+  "Try to apply the first of the methods in the current set of 
+alternatives to the search-state STATE, using DOMAIN.  Return is
+boolean, true if the expansion is successful, otherwise NIL to
+trigger backtracking."
   (with-slots (alternatives backtrack-stack
                plan-tree-lookup current-task)
       state
@@ -330,6 +338,8 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
                 (push (record-node-expansion task-node task-expansion plan-tree-lookup)
                       backtrack-stack)))
             (setf alternatives
+                  ;; FIXME: Why is the version for recording dependencies not
+                  ;; sorting here?
                   (if *record-dependencies-p*
                       (mapcar #'list expansions unifiers dependencies)
                       (multiple-value-bind (expansions unifiers)
@@ -379,10 +389,13 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
 
 ;;; record the expansion of a tree node by rewriting its task.  Return
 ;;; the backtrack stack entry needed to undo the transformation.
-(defun record-node-expansion (tree-node expanded-task hash-table)
+(defun record-node-expansion (tree-node expanded-task hash-table &optional method-name)
   (assert expanded-task)
   (setf (plan-tree:tree-node-expanded-task tree-node)
         expanded-task)
+  (when method-name
+    (assert (plan-tree::complex-tree-node-p tree-node))
+    (setf (plan-tree::complex-tree-node-method-name tree-node) method-name))
   (setf (gethash expanded-task hash-table) tree-node)
   (make-record-expansion tree-node))
 
