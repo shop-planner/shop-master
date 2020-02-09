@@ -70,6 +70,10 @@ messages when it is asked to define components.")
   "When T -- which should only be for legacy SHOP3 domains -- 
 do NOT emit singleton variable warnings.")
 
+(defvar *all-method-names*
+  nil
+  "Will hold a hash table used to insure that all methods have unique names.")
+
 ;;; ------------------------------------------------------------------------
 ;;; Functions for creating and manipulating planning domains and problems
 ;;; ------------------------------------------------------------------------
@@ -260,59 +264,66 @@ forall conditions and replacing the variables in them."
                   `(simple-backquote ,(process-task-list clause)))
                  (t
                   `(quote ,(process-task-list clause)))))))
-
-      ;; answer will be (:method <head> ...)
-      (prog1
-          ;; here's the transformed METHOD
-      `(,(first method)
-        ,method-head
-        ,@(loop with tail = (cddr method)
-                with pre
-                with task-net
-                with var-table
-                ;; there's only one task net
-                with singleton = (or (= (length tail) 1)
-                                     ;; branch name and task net...
-                                     (and (= (length tail) 2)
-                                          (symbolp (first tail))
-                                          (not (variablep (first tail)))))
-                for branch-counter from 0
-                until (null tail)
-                ;; find or make a method label
-                if (and (car tail)
-                        (symbolp (car tail))
-                        ;; could be a second-order HTN.
-                        (not (variablep (first tail))))
-                  collect (pop tail)
-                else
-                  collect (gensym (format nil "~A~D--"
-                                          method-name branch-counter))
-                ;; collect the preconditions
-                do (setf pre (pop tail))
-                   (setf task-net (pop tail))
-                   (setf var-table (harvest-variables (cons pre task-net)))
-                   (push var-table body-var-tables)
-                   (check-for-singletons var-table :context-table task-variables
-                                                   :construct-type (first method)
-                                                   :construct-name method-name
-                                                   :construct method
-                                                   :branch-number (unless singleton (1+ branch-counter)))
-                collect (process-pre domain
-                                     ;; we have to disambiguate
-                                     ;; preconditions if we are in a
-                                     ;; universal-preconditions-mixin,
-                                     ;; but are using SHOP2
-                                     ;; quantification instead of PDDL
-                                     ;; quantification (yuck) -- wish I could think of something better.
-                                     (if (typep domain 'universal-preconditions-mixin)
-                                         (subst 'shop-forall 'forall pre)
-                                         pre))
-                collect (massage-task-net task-net)))
-        ;; just before returning, check for singletons in the method's head
-        (check-for-singletons task-variables :context-tables body-var-tables
-                                             :construct-type (first method)
-                                             :construct-name method-name
-                                             :construct method)))))
+      (macrolet ((get-method-name (lst)
+                   `(let ((name
+                           (if (and (car ,lst)
+                                    (symbolp (car ,lst))
+                                    ;; could be a second-order HTN.
+                                    (not (variablep (first ,lst))))
+                               (pop ,lst)
+                               (gensym (format nil "~A~D--"
+                                               method-name branch-counter)))))
+                     (when (gethash name *all-method-names* nil)
+                       (let ((new-name (gensym (symbol-name name))))
+                         (warn "Non-unique method name: ~s: new name is ~s" name new-name)
+                         (setf name new-name)))
+                      (setf (gethash name *all-method-names*) t)
+                      name)))
+        ;; answer will be (:method <head> ...)
+        (prog1
+            ;; here's the transformed METHOD
+            `(,(first method)
+              ,method-head
+              ,@(loop with tail = (cddr method)
+                      with pre
+                      with task-net
+                      with var-table
+                      ;; there's only one task net
+                      with singleton = (or (= (length tail) 1)
+                                           ;; branch name and task net...
+                                           (and (= (length tail) 2)
+                                                (symbolp (first tail))
+                                                (not (variablep (first tail)))))
+                      for branch-counter from 0
+                      until (null tail)
+                      ;; find or make a method label
+                      collect (get-method-name tail)
+                      ;; collect the preconditions
+                      do (setf pre (pop tail))
+                         (setf task-net (pop tail))
+                         (setf var-table (harvest-variables (cons pre task-net)))
+                         (push var-table body-var-tables)
+                         (check-for-singletons var-table :context-table task-variables
+                                                         :construct-type (first method)
+                                                         :construct-name method-name
+                                                         :construct method
+                                                         :branch-number (unless singleton (1+ branch-counter)))
+                      collect (process-pre domain
+                                           ;; we have to disambiguate
+                                           ;; preconditions if we are in a
+                                           ;; universal-preconditions-mixin,
+                                           ;; but are using SHOP2
+                                           ;; quantification instead of PDDL
+                                           ;; quantification (yuck) -- wish I could think of something better.
+                                           (if (typep domain 'universal-preconditions-mixin)
+                                               (subst 'shop-forall 'forall pre)
+                                               pre))
+                      collect (massage-task-net task-net)))
+          ;; just before returning, check for singletons in the method's head
+          (check-for-singletons task-variables :context-tables body-var-tables
+                                               :construct-type (first method)
+                                               :construct-name method-name
+                                               :construct method))))))
 
 (defmethod process-method :before ((domain pure-logic-domain-mixin) method)
   (declare (ignorable domain))
@@ -525,40 +536,41 @@ breaks usage of *load-truename* by moving the FASLs.")
      (apply 'make-domain ',name-and-options ',items)))
 
 (defun make-domain (name-and-options &rest items)
-  (destructuring-bind (name &rest options &key (type 'domain) noset redefine-ok &allow-other-keys)
-      name-and-options
-    (unless *define-silently*
-      (when *defdomain-verbose*
-        (format t "~%Defining domain ~a...~%" name)))
-    (unless (subtypep type 'domain)
-      (error "Type argument to defdomain must be a subtype of DOMAIN. ~A is not acceptable." type))
-    (remf options :type)
-    (remf options :redefine-ok)
-    (remf options :noset)
-    (setf redefine-ok (or redefine-ok *define-silently*))
-    (let ((domain (apply #'make-instance type
-                         :name name
-                         options)))
-      ;; I suspect that this should go away and be handled by
-      ;; initialize-instance... [2006/07/31:rpg]
-      (apply #'handle-domain-options domain options)
-      (setf items (expand-includes domain items))
-      (let (warnings)
-        (handler-bind
-            ((domain-item-parse-warning
-               #'(lambda (c)
-                   (push c warnings)
-                   (muffle-warning c))))
-          (parse-domain-items domain items))
-        (when warnings
-          (let ((*print-pprint-dispatch* *shop-pprint-table*))
-            (format T "Warnings:~{~&~a~%~%~}" (nreverse warnings)))))
-      (install-domain domain redefine-ok)
-      (unless noset
-        (setf *domain* domain))
-      ;; previous addition of noset changed the behavior of defdomain to make
-      ;; it NOT return the defined domain; this is inappropriate. [2009/03/26:rpg]
-      domain)))
+  (let ((*all-method-names* (make-hash-table :test 'eq)))
+    (destructuring-bind (name &rest options &key (type 'domain) noset redefine-ok &allow-other-keys)
+        name-and-options
+      (unless *define-silently*
+        (when *defdomain-verbose*
+          (format t "~%Defining domain ~a...~%" name)))
+      (unless (subtypep type 'domain)
+        (error "Type argument to defdomain must be a subtype of DOMAIN. ~A is not acceptable." type))
+      (remf options :type)
+      (remf options :redefine-ok)
+      (remf options :noset)
+      (setf redefine-ok (or redefine-ok *define-silently*))
+      (let ((domain (apply #'make-instance type
+                           :name name
+                           options)))
+        ;; I suspect that this should go away and be handled by
+        ;; initialize-instance... [2006/07/31:rpg]
+        (apply #'handle-domain-options domain options)
+        (setf items (expand-includes domain items))
+        (let (warnings)
+          (handler-bind
+              ((domain-item-parse-warning
+                 #'(lambda (c)
+                     (push c warnings)
+                     (muffle-warning c))))
+            (parse-domain-items domain items))
+          (when warnings
+            (let ((*print-pprint-dispatch* *shop-pprint-table*))
+              (format T "Warnings:~{~&~a~%~%~}" (nreverse warnings)))))
+        (install-domain domain redefine-ok)
+        (unless noset
+          (setf *domain* domain))
+        ;; previous addition of noset changed the behavior of defdomain to make
+        ;; it NOT return the defined domain; this is inappropriate. [2009/03/26:rpg]
+        domain))))
 
 (defmethod install-domain ((domain domain) &optional redefine-ok)
   (when (get (domain-name domain) :domain)
