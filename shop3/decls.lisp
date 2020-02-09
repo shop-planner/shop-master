@@ -302,6 +302,32 @@ structure could be removed, and a true struct could be used instead."
   additions
   (cost-fun nil))
 
+(defgeneric method-p (domain sexpr)
+  (:documentation "Is SEXPR a method object relative to DOMAIN?")
+  (:method ((domain domain) obj)
+    (declare (ignorable domain obj))
+    nil)
+  (:method ((domain domain) (sexpr list))
+    (declare (ignorable domain))
+    (eq (first sexpr) :method)))
+
+(defgeneric method-task (domain sexpr)
+  (:method ((domain domain) (sexpr list))
+    (second sexpr)))
+
+(defgeneric method-name (domain sexpr)
+  (:method ((domain domain) (sexpr list))
+    (third sexpr)))
+
+(defgeneric method-preconditions (domain sexpr)
+  (:method ((domain domain) (sexpr list))
+    (fourth sexpr)))
+
+(defgeneric method-task-net (domain sexpr)
+  (:method ((domain domain) (sexpr list))
+    (fifth sexpr)))
+
+
 ;;;------------------------------------------------------------------------------------------------------
 ;;; CLOS Generic Function Definitions
 ;;;------------------------------------------------------------------------------------------------------
