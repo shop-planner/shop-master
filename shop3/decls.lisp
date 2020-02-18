@@ -291,6 +291,8 @@ IF-THEN-ELSE semantics in methods."))
 ;;;---------------------------------------------------------------------------
 ;;; OPERATORS
 ;;;---------------------------------------------------------------------------
+(deftype operator () '(satisfies operator-p))
+(deftype pddl-action () '(satisfies pddl-action-p))
 
 (defstruct (operator :named (:type list))
   "This structure definition was added in order to make the
@@ -301,6 +303,9 @@ structure could be removed, and a true struct could be used instead."
   deletions
   additions
   (cost-fun nil))
+
+(defun operator-name (operator)
+  (first (operator-head operator)))
 
 (defgeneric method-p (domain sexpr)
   (:documentation "Is SEXPR a method object relative to DOMAIN?")
