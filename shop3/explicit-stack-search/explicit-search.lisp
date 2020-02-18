@@ -25,7 +25,8 @@ Does not support the full range of options supported by SHOP3: only
 supports finding the first solution to PROBLEM.  To comply with SHOP3,
 though, always returns a list of plans.
   If the PLAN-TREE keyword argument is non-NIL, will return an enhanced plan
-tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
+tree, with causal links, unless NO-DEPENDENCIES is non-NIL.
+  Returns the values returned by SEEK-PLANS-STACK, qv."
   (when gc
     (trivial-garbage:gc :full t))
 
@@ -37,7 +38,7 @@ tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
          (start-real-time (get-internal-real-time))
          (*plan-tree* nil)
          (*plans-found* nil)
-         (*enhanced-plan-tree* repairable)
+         (*enhanced-plan-tree* plan-tree)
          (*no-dependencies* no-dependencies)
          (*include-rationale* rationale)
          (*record-dependencies-p* (and *enhanced-plan-tree* (not *no-dependencies*)))
@@ -106,12 +107,13 @@ tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
   "Workhorse function for FIND-PLANS-STACK.  Executes the SHOP3 search
 virtual machine, cycling through different virtual instructions depending
 on the value of the MODE slot of STATE.
-   Returns three values:
+   Returns four values:
 List of PLANS -- currently there is always only one, but this complies
    with the return from conventional SHOP3.
 List of PLAN-TREES -- optional
 List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
-    supplied."
+    supplied.
+Planner state object that can be used to resume the planner."
   ;; kick off the stack VM
   (setf (mode state) 'test-for-done)
   (catch 'search-failed
@@ -335,7 +337,8 @@ trigger backtracking."
               (let ((task-node (plan-tree:find-task-in-tree
                                 current-task plan-tree-lookup)))
                 
-                (push (record-node-expansion task-node task-expansion plan-tree-lookup)
+                (push (record-node-expansion task-node task-expansion plan-tree-lookup
+                                             :chosen-method (method-name domain method))
                       backtrack-stack)))
             (setf alternatives
                   ;; FIXME: Why is the version for recording dependencies not
@@ -389,13 +392,13 @@ trigger backtracking."
 
 ;;; record the expansion of a tree node by rewriting its task.  Return
 ;;; the backtrack stack entry needed to undo the transformation.
-(defun record-node-expansion (tree-node expanded-task hash-table &optional method-name)
+(defun record-node-expansion (tree-node expanded-task hash-table &key chosen-method)
   (assert expanded-task)
   (setf (plan-tree:tree-node-expanded-task tree-node)
         expanded-task)
-  (when method-name
-    (assert (plan-tree::complex-tree-node-p tree-node))
-    (setf (plan-tree::complex-tree-node-method-name tree-node) method-name))
+  (when chosen-method
+    (setf (plan-tree:complex-tree-node-method-name tree-node)
+          chosen-method))
   (setf (gethash expanded-task hash-table) tree-node)
   (make-record-expansion tree-node))
 
