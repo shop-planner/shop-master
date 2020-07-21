@@ -131,6 +131,27 @@ absolute pathname, or a path-relative namestring)."
 PDDL operator definitions.")
   )
 
+(defgeneric pddl-method-p (domain sexpr)
+  (:method ((domain domain) obj)
+    (declare (ignorable domain obj))
+    nil)
+  (:method ((domain simple-pddl-domain) (sexpr list))
+    (declare (ignorable domain))
+    (or (eq (first sexpr) :pddl-method)
+        (call-next-method))))
+
+
+(defmethod method-p ((domain simple-pddl-domain) (sexpr list))
+  (or (pddl-method-p domain sexpr)
+      (call-next-method)))
+
+(defmethod method-name ((domain simple-pddl-domain) (sexpr list))
+  (or 
+   (and (pddl-method-p domain sexpr)
+        (third sexpr))
+   (call-next-method)))
+
+
 (defclass negative-preconditions-mixin ()
   ()
   )
@@ -210,6 +231,15 @@ add code for processing the actions that is parallel to process-operator."))
                                (f-exp-value ?y ?y-val)
                                (call ?op ?x-val ?y-val))))))
     (set-variable-property domain fluents-axioms)
+(defun pddl-action-name (pddl-action)
+  (first (pddl-action-head pddl-action)))
+
+(defmethod parse-domain-items :around ((domain equality-mixin) items)
+  "Add the axiom that treats equality as a built-in predicate.  This should 
+later be compiled into find-satisfiers or something."
+  (let ((equality-axiom '(:- (= ?x ?x) nil)))
+    (set-variable-property domain equality-axiom)
+    (call-next-method domain (cons equality-axiom items))))
 
     ;; the definition of functions must come before the other items we parse
     ;; for reasons I don't understand, the items are parsed in reverse
@@ -895,6 +925,11 @@ set of dependencies."
          #+ignore var-table)
     (when (typep domain 'fluents-mixin)
       (setf pre (translate-fluent-precond domain pre)))
+    (when (gethash method-name *all-method-names* nil)
+      (let ((new-name (gensym (symbol-name method-name))))
+        (warn "Non-unique method name ~S: renaming to ~S" method-name new-name)
+        (setf method-name new-name)))
+    (setf (gethash method-name *all-method-names*) t)
     (labels ((process-task-list (tasks)
                (cond
                  ((null tasks) (list :ordered (list :task '!!inop)))
