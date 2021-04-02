@@ -131,7 +131,8 @@ tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
     (unwind-protect
          (seek-plans-stack search-state domain
                            :which which
-                           :repairable repairable)
+                           :repairable repairable
+                           :stream out-stream)
       (setq total-run-time (- (get-internal-run-time) start-run-time)
             total-real-time (- (get-internal-real-time)
                                start-real-time))
@@ -148,7 +149,7 @@ tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
       (unless repairable
         (delete-state-tag-decoder)))))
       
-(defun seek-plans-stack (state domain &key (which :first) repairable)
+(defun seek-plans-stack (state domain &key (which :first) repairable (stream t))
   "Workhorse function for FIND-PLANS-STACK.  Executes the SHOP3 search
 virtual machine, cycling through different virtual instructions depending
 on the value of the MODE slot of STATE.
@@ -166,7 +167,7 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
                                    (error "Search state object should have a PLAN-TREE.")))
       ;; bumped the verbose for this to be printed, because it's really not useful
       (when (>= *verbose* 2)
-        (format t "~&State is: ~a. Mode is: ~a.~%" state (mode state)))
+        (format stream "~&State is: ~a. Mode is: ~a.~%" state (mode state)))
       (ecase (mode state)
         (test-for-done
          (if (empty-p state)
@@ -219,14 +220,14 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
               (setf (mode state) 'prepare-to-choose-method)))))
 
         (unfold-looping-task
-         (when (> *verbose* 2) (format t "~%Starting to unfold the loop..."))
+         (when (> *verbose* 2) (format stream "~%Starting to unfold the loop..."))
          (if (unfold-loop-task domain state)
              (progn
                (setf (mode state) 'test-for-done)
                (incf (depth state)))
              ;; Else, 
              (with-slots (current-task depth world-state) state
-                (when (> *verbose* 0) (format t "~%Could not unfold the loop successfully..."))
+                (when (> *verbose* 0) (format stream "~%Could not unfold the loop successfully..."))
                 (trace-print :tasks (get-task-name current-task) world-state
                              "~2%Depth ~s, backtracking from task~%      task ~s"
                              depth
@@ -283,7 +284,7 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
              (apply-substitution-to-tree (unifier state) (plan-tree state)))
            (setf *plans-found* (append plans *plans-found*))
            (when (> *verbose* 0)
-            (format t "~%~%Solution plan is found successfully...:~%~a"
+            (format stream "~%~%Solution plan is found successfully...:~%~a"
                     plans))
            (return
              (values plans
