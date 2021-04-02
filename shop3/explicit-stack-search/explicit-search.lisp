@@ -36,7 +36,6 @@
                 ~4,1TFailed to choose a method: ~44,1t~5,d~%~
                 ~4,1TFailed to bind method parameters: ~44,1t~5,d~%"
              *backtrack-failed-pop-toplevel*
-             *backtrack-failed-pop-toplevel*
              *backtrack-failed-pop-immediate*
              *backtrack-failed-loop-unfold*
              *backtrack-failed-primitive*
