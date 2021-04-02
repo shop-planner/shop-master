@@ -145,7 +145,6 @@ tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
                    :stream out-stream
                    :backtracks *backtracks*)
       (print-backtrack-stats)
-      (unless *print-stats* (format t "~&NOT printing stats!~%"))
       (unless repairable
         (delete-state-tag-decoder)))))
       
