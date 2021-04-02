@@ -15,6 +15,33 @@
 
 (defgeneric expand-primitive-state (state domain))
 
+(declaim (special
+          *backtrack-failed-pop-toplevel*
+          *backtrack-failed-pop-toplevel*
+          *backtrack-failed-pop-immediate*
+          *backtrack-failed-loop-unfold*
+          *backtrack-failed-primitive*
+          *backtrack-failed-choose-method*
+          *backtrack-failed-choose-method-bindings*))
+
+;;; non-hygienic macro to print a table of backtrack information
+(defmacro print-backtrack-stats ()
+  `(when *print-stats*
+     (format out-stream
+             "~&Backtrack categories:~%~
+                ~4,1TFailed to choose toplevel task: ~44,1t~5,d~%~
+                ~4,1TFailed to choose immediate task: ~44,1t~5,d~%~
+                ~4,1TFailed to unfold a loop: ~44,1t~5,d~%~
+                ~4,1TFailed to expand a primitive task: ~44,1t~5,d~%~
+                ~4,1TFailed to choose a method: ~44,1t~5,d~%~
+                ~4,1TFailed to bind method parameters: ~44,1t~5,d~%"
+             *backtrack-failed-pop-toplevel*
+             *backtrack-failed-pop-toplevel*
+             *backtrack-failed-pop-immediate*
+             *backtrack-failed-loop-unfold*
+             *backtrack-failed-primitive*
+             *backtrack-failed-choose-method*
+             *backtrack-failed-choose-method-bindings*)))
 
 (defun find-plans-stack (problem &key domain (verbose 0) plan-tree (gc *gc*)
                                    (no-dependencies nil)
@@ -43,6 +70,7 @@ tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
          (*include-rationale* rationale)
          (*record-dependencies-p* (and *enhanced-plan-tree* (not *no-dependencies*)))
          (*verbose* verbose)
+         (*print-stats* *print-stats*)
          (*which* which)
          (*make-analogy-table* make-analogy-table)
          (*analogical-replay* analogical-replay)
@@ -77,8 +105,17 @@ tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
                     tree)))
          (*expansions* 0)
          (*inferences* 0)
+         (*backtracks* 0)
+         (*backtrack-failed-pop-toplevel* 0)
+         (*backtrack-failed-pop-immediate* 0)
+         (*backtrack-failed-loop-unfold* 0)
+         (*backtrack-failed-primitive* 0)
+         (*backtrack-failed-choose-method* 0)
+         (*backtrack-failed-choose-method-bindings* 0)
          total-run-time total-real-time
          total-expansions total-inferences)
+
+    (determine-verbosity verbose)
 
     (when (and analogical-replay make-analogy-table)
       (error "Cannot build the analogy table while using it: :analogical-replay and ~
@@ -93,9 +130,9 @@ tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
     (set-variable-property domain tasks)
 
     (unwind-protect
-        (seek-plans-stack search-state domain
-                          :which which
-                          :repairable repairable)
+         (seek-plans-stack search-state domain
+                           :which which
+                           :repairable repairable)
       (setq total-run-time (- (get-internal-run-time) start-run-time)
             total-real-time (- (get-internal-real-time)
                                start-real-time))
@@ -103,11 +140,13 @@ tree, with causal links, unless NO-DEPENDENCIES is non-NIL."
       (setq total-expansions *expansions*
             total-inferences *inferences*)
       
-      (when (> verbose 0)
-        (print-stats-header "Totals:" out-stream)
-        (print-stats "" *plans-found* total-expansions total-inferences
-                     total-run-time total-real-time out-stream))
-      
+      (print-stats-header "Totals:" :stream out-stream :backtracks t)
+      (print-stats "" *plans-found* total-expansions total-inferences
+                   total-run-time total-real-time
+                   :stream out-stream
+                   :backtracks *backtracks*)
+      (print-backtrack-stats)
+      (unless *print-stats* (format t "~&NOT printing stats!~%"))
       (unless repairable
         (delete-state-tag-decoder)))))
       
@@ -146,9 +185,11 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
                (t
                 (setf (mode state) 'prepare-to-choose-toplevel-task))))
         (pop-immediate-task
-         (if (choose-immediate-task-state state)
-             (setf (mode state) 'expand-task)
-             (stack-backtrack state)))
+         (cond ((choose-immediate-task-state state)
+                (setf (mode state) 'expand-task))
+               (t (incf *backtracks*)
+                  (incf *backtrack-failed-pop-immediate*)
+                  (stack-backtrack state))))
 
         (prepare-to-choose-toplevel-task
          (let ((tasks (sort-tasks domain (top-tasks state) (unifier state) which)))
@@ -157,9 +198,12 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
                  (mode state) 'pop-toplevel-task)))
 
         (pop-toplevel-task
-         (if (choose-toplevel-task state)
-             (setf (mode state) 'expand-task)
-             (stack-backtrack state)))
+         (cond ((choose-toplevel-task state)
+                (setf (mode state) 'expand-task))
+               (t
+                (incf *backtrack-failed-pop-toplevel*)
+                (incf *backtracks*)
+                (stack-backtrack state))))
 
         (expand-task
          (let ((task (current-task state)))
@@ -189,6 +233,8 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
                              "~2%Depth ~s, backtracking from task~%      task ~s"
                              depth
                              current-task)
+               (incf *backtrack-failed-loop-unfold*)
+               (incf *backtracks*)
                 (stack-backtrack state))))
 
         (expand-primitive-task
@@ -201,6 +247,8 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
                             "~2%Depth ~s, backtracking from task~%      task ~s"
                             depth
                             current-task)
+               (incf *backtrack-failed-primitive*)
+               (incf *backtracks*)
                (stack-backtrack state))))
         (prepare-to-choose-method
          (let* ((task-name (get-task-name (current-task state)))
@@ -218,6 +266,8 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
                               "~2%Depth ~s, backtracking from task~%      task ~s"
                               depth
                               task1))
+               (incf *backtracks*)
+               (incf *backtrack-failed-choose-method*)
                (stack-backtrack state))))
         ;; the alternatives here are triples of (expansions unifiers dependencies)
         (choose-method-bindings
@@ -225,7 +275,10 @@ List of indices into PLAN-TREES -- optional, will be supplied if PLAN-TREES
              (progn
                (setf (mode state) 'test-for-done)
                (incf (depth state)))
-             (stack-backtrack state)))
+             (progn
+               (incf *backtracks*)
+               (incf *backtrack-failed-choose-method-bindings*)
+              (stack-backtrack state))))
         (extract-plan
          (let ((plans (test-plans-found state :repairable repairable)))
            (when *enhanced-plan-tree*
