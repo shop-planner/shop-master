@@ -28,6 +28,7 @@
     that are strictly MORE specific than (domain list symbol list) in order to
     shadow the default method.")
   (:method :after (domain task method-id &optional (backtrack-stack nil backtrack-stack-supplied-p))
+    (declare (ignorable domain task method-id))
     (when backtrack-stack-supplied-p
       (push (make-record-expansion-for-replay task method-id)
             backtrack-stack)))
@@ -37,10 +38,12 @@
 
 (defgeneric find-decompositions (domain task)
   (:method ((domain domain) (task list))
+    (declare (ignorable domain))
     (gethash (task-name task) *analogical-replay-table*)))
 
 (defgeneric clear-replay-table (domain table)
-  (:method :around ((domain domain) (table hash-table))
+  (:method :after ((domain domain) (table hash-table))
+    (declare (ignorable domain))
     (uiop:delete-file-if-exists "/tmp/analogy.log"))
   (:method ((domain domain) (table hash-table))
     (declare (ignorable domain))
