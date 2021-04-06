@@ -12,6 +12,7 @@
 (defmacro before-run ()
   '(logistics-domain))
 
+
 ;;;--------------------------------------------------
 ;;; Configuration above -- code below should not have
 ;;; to change by domain.
@@ -22,8 +23,16 @@
 (before-run)
 
 (loop :for file :in (directory (concatenate 'string +PROBLEM-DIR+ +PROBLEM-PATTERN+))
+      :as file-name = (pathname-name file)
+      :as probset-name = (intern
+                          (concatenate 'string
+                                       "SET"
+                                       (subseq file-name (1+ (position #\_ file-name :from-end t))))
+                          :shop-user)
       :do (load file)
-          (loop :for probname :in *file-problems*
+          (loop :for probname :in (or (sort (copy-list  (get probset-name :problems))
+                                             #'string-lessp)
+                                      (error "No problem set named ~a" probset-name))
                 :do (with-open-file (str (concatenate 'string +PROBLEM-DIR+ "runall.log")
                                          :direction :output :if-exists :append :if-does-not-exist :create)
                       (format str
