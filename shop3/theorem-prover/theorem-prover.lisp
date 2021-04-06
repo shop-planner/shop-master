@@ -146,7 +146,7 @@ or all answers (nil)."
                         (if (= (length goals) 3) #'<
                             (eval (third goals)))
                         :key #'(lambda (sat)
-                                 (eval (apply-substitution (second goals) sat))))
+                                 (apply-substitution (second goals) sat)))
                   (when *record-dependencies-p* (make-list num-satisfiers :initial-element nil)))
                  ;; see earlier comment about SORT-BY.
                  #+ignore(if *record-dependencies-p*
