@@ -23,11 +23,12 @@
 
 (loop :for file :in (directory (concatenate 'string +PROBLEM-DIR+ +PROBLEM-PATTERN+))
       :do (load file)
-          (with-open-file (str (concatenate 'string +PROBLEM-DIR+ "runall.log")
-                               :direction :output :if-exists :append :if-does-not-exist :create)
-            (format str
-                    "~3%--------------------------------------------------~%~
-                     ~a~%" (pathname-name file))
+          (loop :for probname :in *file-problems*
+                :do (with-open-file (str (concatenate 'string +PROBLEM-DIR+ "runall.log")
+                                         :direction :output :if-exists :append :if-does-not-exist :create)
+                      (format str
+                              "~3%--------------------------------------------------~%~
+                     ~a~%" probname)
 
-            (find-plans-stack shop::*problem* :verbose 1 :out-stream str )
-            (terpri str)))
+             (find-plans-stack probname :verbose 1 :out-stream str )
+             (terpri str))))
